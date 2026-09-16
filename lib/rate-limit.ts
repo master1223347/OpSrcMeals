@@ -1,0 +1,1 @@
+const entries=new Map<string,{count:number;reset:number}>(); export function allowRequest(key:string,max=8,windowMs=3600000){const now=Date.now(),item=entries.get(key);if(!item||item.reset<now){entries.set(key,{count:1,reset:now+windowMs});return true}if(item.count>=max)return false;item.count++;return true}

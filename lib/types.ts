@@ -1,0 +1,3 @@
+export type Ingredient={name:string;quantity?:number|null;unit?:string|null;notes?:string|null};
+export type RecipeInput={title:string;description?:string|null;servings?:number|null;prepMinutes?:number|null;cookMinutes?:number|null;ingredients:Ingredient[];instructions:string[];nutrition?:{calories?:number|null;protein?:number|null;carbs?:number|null;fat?:number|null}|null;cuisine?:string|null;mealType?:string|null;tags?:string[];source?:{platform?:string|null;url?:string|null}|null;contributorName?:string|null;sourceImageUrl?:string|null};
+export type Recipe=RecipeInput&{id:string;createdAt:string;slug:string};
