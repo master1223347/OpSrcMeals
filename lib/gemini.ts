@@ -5,7 +5,7 @@ import type { RecipeInput } from "./types";
 export class GeminiTemporaryError extends Error {}
 
 const text = z.string().nullish().transform((value) => value?.trim() || "");
-const optionalNumber = z.number().nullish().transform((value) => value ?? null);
+const optionalNumber = z.preprocess(normalizeRecipeNumber, z.number().finite().nullable());
 const schema = z.object({
   title: text,
   description: text.nullable().optional(),
@@ -21,7 +21,7 @@ const schema = z.object({
   source: z.object({ platform: text.nullable().optional(), url: text.nullable().optional() }).nullish().transform((value) => value ?? {}),
 });
 
-const prompt = `Extract this into a recipe JSON object. Do not invent values; use null when unavailable. Always return title as a string; use an empty string if it is unknown. Normalize quantities and units. Return JSON only with title, description, servings, prepMinutes, cookMinutes, ingredients, instructions, nutrition {calories,protein,carbs,fat}, cuisine, mealType, tags, source {platform,url}.`;
+const prompt = `Extract this freeform recipe into a normalized recipe JSON object. Do not invent values; use null when unavailable. Always return title as a string; use an empty string if it is unknown. Quantities, servings, times, and nutrition MUST be JSON numbers, never strings: use decimals for fractions and ranges (for example, 1/2 becomes 0.5 and 3–4 becomes 3.5). Keep ingredient units separate from quantities. Return JSON only with title, description, servings, prepMinutes, cookMinutes, ingredients, instructions, nutrition {calories,protein,carbs,fat}, cuisine, mealType, tags, source {platform,url}.`;
 
 export async function extractRecipe(textInput?: string, image?: { data: string; mimeType: string }, sourceUrl?: string): Promise<RecipeInput> {
   const key = process.env.GEMINI_API_KEY;
@@ -58,6 +58,31 @@ export async function extractRecipe(textInput?: string, image?: { data: string; 
 function isTemporaryGeminiError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return /\b(429|503)\b|high demand|unavailable|overloaded/i.test(message);
+}
+
+function normalizeRecipeNumber(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+
+  const input = value.trim().toLowerCase();
+  if (!input || /^(to taste|as needed|optional|few|some)$/i.test(input)) return null;
+  if (input === "half" || input === "one half") return 0.5;
+  if (input === "quarter" || input === "one quarter") return 0.25;
+
+  const range = input.match(/(-?\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(-?\d+(?:\.\d+)?)/);
+  if (range) return (Number(range[1]) + Number(range[2])) / 2;
+
+  const fraction = input.match(/^(\d+\s+)?(\d+)\s*\/\s*(\d+)/);
+  if (fraction) return (Number(fraction[1]?.trim() || 0) + Number(fraction[2]) / Number(fraction[3]));
+
+  const unicodeFraction = input.match(/(\d+)?\s*([¼½¾⅓⅔⅛⅜⅝⅞])/);
+  if (unicodeFraction) {
+    const fractions: Record<string, number> = { "¼": 0.25, "½": 0.5, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3, "⅛": 0.125, "⅜": 0.375, "⅝": 0.625, "⅞": 0.875 };
+    return Number(unicodeFraction[1] || 0) + fractions[unicodeFraction[2]];
+  }
+
+  const number = input.match(/-?\d+(?:\.\d+)?/);
+  return number ? Number(number[0]) : null;
 }
 
 function platform(url: string) {
